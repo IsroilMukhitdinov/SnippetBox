@@ -58,7 +58,7 @@ func main() {
 
 	srv := http.Server{
 		Addr:     fmt.Sprintf(":%d", *addr),
-		Handler:  app.routes(),
+		Handler:  secureHeaders(app.routes()),
 		ErrorLog: errLog,
 	}
 

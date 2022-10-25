@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (app *application) render(response http.ResponseWriter, name string, td *templateData) {
+func (app *application) render(response http.ResponseWriter, status int, name string, td *templateData) {
 	ts, ok := app.templateCache[name]
 	if !ok {
 		app.serverError(response, fmt.Errorf("template %s does not exist", name))
@@ -23,6 +23,7 @@ func (app *application) render(response http.ResponseWriter, name string, td *te
 		return
 	}
 
+	response.WriteHeader(status)
 	buf.WriteTo(response)
 }
 
@@ -32,6 +33,12 @@ func (app *application) addDefaultData(td *templateData) *templateData {
 	}
 
 	td.CurrentYear = time.Now().Year()
+
+	if td.SnippetForm == nil {
+		td.SnippetForm = &SnippetForm{
+			Expires: 1,
+		}
+	}
 
 	return td
 }

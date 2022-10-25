@@ -7,13 +7,18 @@ import (
 	"strconv"
 
 	"github.com/IsroilMukhitdinov/snippetbox/internal/models"
+	"github.com/IsroilMukhitdinov/snippetbox/internal/validators"
+	"github.com/julienschmidt/httprouter"
 )
 
+type SnippetForm struct {
+	Title   string
+	Content string
+	Expires int
+	validators.Validator
+}
+
 func (app *application) home(response http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/" {
-		app.notFound(response)
-		return
-	}
 
 	snippets, err := app.snippetModel.Latest()
 	if err != nil {
@@ -25,13 +30,15 @@ func (app *application) home(response http.ResponseWriter, request *http.Request
 		}
 	}
 
-	app.render(response, "home.html", &templateData{
+	app.render(response, http.StatusOK, "home.html", &templateData{
 		Snippets: snippets,
 	})
 }
 
 func (app *application) snippetView(response http.ResponseWriter, request *http.Request) {
-	id, err := strconv.Atoi(request.URL.Query().Get("id"))
+
+	params := httprouter.ParamsFromContext(request.Context())
+	id, err := strconv.Atoi(params.ByName("id"))
 	if err != nil || id < 1 {
 		app.notFound(response)
 		return
@@ -48,21 +55,45 @@ func (app *application) snippetView(response http.ResponseWriter, request *http.
 		}
 	}
 
-	app.render(response, "view.html", &templateData{
+	app.render(response, http.StatusOK, "view.html", &templateData{
 		Snippet: snippet,
 	})
 }
 
-func (app *application) snippetCreate(response http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodPost {
-		response.Header().Set("Allow", http.MethodPost)
-		app.clientError(response, http.StatusMethodNotAllowed)
+func (app *application) snippetCreatePost(response http.ResponseWriter, request *http.Request) {
+
+	err := request.ParseForm()
+	if err != nil {
+		app.clientError(response, http.StatusBadRequest)
 		return
 	}
 
-	title := "O snail"
-	content := "O snail\nClimb Mount Fuji,\nBut slowly, slowly!\n\n- Kobayashi Issa"
-	expires := 7
+	title := request.PostForm.Get("title")
+	content := request.PostForm.Get("content")
+	expires, err := strconv.Atoi(request.PostForm.Get("expires"))
+	if err != nil {
+		app.clientError(response, http.StatusBadRequest)
+		return
+	}
+
+	form := &SnippetForm{
+		Title:   title,
+		Content: content,
+		Expires: expires,
+	}
+
+	form.CheckField(validators.NotBlank(title), "title", "This field cannot be blank")
+	form.CheckField(validators.NotBlank(content), "content", "This field cannot be blank")
+	form.CheckField(validators.MaxLength(title, 100), "title", "This field cannot be more than 100 characters long")
+	form.CheckField(validators.PermittedValues(expires, 1, 30, 365), "expires", "This field must equal 1, 30 or 365")
+
+	if !form.Valid() {
+		app.render(response, http.StatusUnprocessableEntity, "create.html", &templateData{
+			SnippetForm: form,
+		})
+
+		return
+	}
 
 	id, err := app.snippetModel.Insert(title, content, expires)
 	if err != nil {
@@ -70,5 +101,9 @@ func (app *application) snippetCreate(response http.ResponseWriter, request *htt
 		return
 	}
 
-	http.Redirect(response, request, fmt.Sprintf("/snippet/view?id=%d", id), http.StatusSeeOther)
+	http.Redirect(response, request, fmt.Sprintf("/snippet/view/%d", id), http.StatusSeeOther)
+}
+
+func (app *application) snippetCreate(response http.ResponseWriter, request *http.Request) {
+	app.render(response, http.StatusOK, "create.html", &templateData{})
 }
